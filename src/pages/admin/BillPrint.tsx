@@ -69,7 +69,9 @@ export default function BillPrint() {
   useEffect(() => {
     if (!bill) return
 
-    const timer = window.setTimeout(() => window.print(), 500)
+    // macOS requires window.focus() before window.print().
+    // 800ms gives the logo image time to load fully on Mac.
+    const timer = window.setTimeout(() => { window.focus(); window.print() }, 800)
     return () => window.clearTimeout(timer)
   }, [bill])
 

@@ -1,35 +1,31 @@
 // src/lib/print-serial.ts
-// Serial print (list of pattis + net amounts) with ESC/POS WiFi path.
-// Falls back to window.print() if the /api/print-raw endpoint is unreachable.
+// Serial print (patti list + net amounts) via WebUSB ESC/POS.
+// Falls back to window.print() if WebUSB is unavailable or user cancels.
 
-import { EscPos, sendToWifi } from './print-escpos'
+import { EscPos } from './print-escpos'
+import { sendToUsb, isWebUsbSupported } from './print-usb'
 
 // ── ESC/POS BUILD ─────────────────────────────────────────────────────────
-function buildSerialEscPos(rows: any[]): Uint8Array {
+function buildEscPos(rows: any[]): Uint8Array {
   const total = Math.round(
     rows.reduce((s, r) => s + Number(r.net_amount || 0), 0)
   )
 
   const p = new EscPos()
   p.init()
-
-  p.alignCenter()
-  p.bold(true).big(true).line('NKV BOMBAY').line('LEMON TRADERS').big(false)
-  p.line('Serial Print')
-  p.bold(false)
+  p.alignCenter().bold(true).big(true)
+  p.line('NKV BOMBAY').line('LEMON TRADERS')
+  p.big(false).line('Serial Print').bold(false)
   p.sep()
-
   p.alignLeft()
+
   rows.forEach(r => {
-    const amt = Number(r.net_amount || 0).toFixed(0)
-    p.row(`${r.patti_name} #${r.serial_number}`, `Rs.${amt}`)
+    p.row(`${r.patti_name} #${r.serial_number}`, `Rs.${Number(r.net_amount || 0).toFixed(0)}`)
   })
 
   p.sep()
   p.bold(true).row('TOTAL', `Rs.${total}`).bold(false)
-  p.feed(4)
-  p.cut()
-
+  p.feed(4).cut()
   return p.build()
 }
 
@@ -54,24 +50,17 @@ function printSerialViaPopup(rows: any[]): void {
     <div class="center small">Serial Print</div>
     <div class="line"></div>
   `
-
   rows.forEach(r => {
     content += `
       <div class="item">
         <span>${r.patti_name} #${r.serial_number}</span>
         <span>Rs.${Number(r.net_amount || 0).toFixed(0)}</span>
-      </div>
-    `
+      </div>`
   })
-
   content += `
     <div class="line"></div>
-    <div class="item bold">
-      <span>Total</span>
-      <span>Rs.${total}</span>
-    </div>
-  </div>
-  `
+    <div class="item bold"><span>Total</span><span>Rs.${total}</span></div>
+  </div>`
 
   const win = window.open('', '_blank', 'width=320,height=600,menubar=no,toolbar=no')
   if (!win) {
@@ -86,36 +75,31 @@ function printSerialViaPopup(rows: any[]): void {
   }
 
   win.document.write(`
-    <html>
-      <head>
-        <style>
-          @page { size: 80mm auto; margin: 0; }
-          body { margin: 0; font-family: monospace; }
-          .receipt { width: 72mm; padding: 3mm; font-size: 10px; }
-          .center { text-align: center; }
-          .bold { font-weight: bold; }
-          .small { font-size: 8px; }
-          .item { display: flex; justify-content: space-between; }
-          .line { border-top: 1px dashed black; margin: 3px 0; }
-          @media print { @page { margin: 0; } }
-        </style>
-      </head>
-      <body>${content}</body>
-    </html>
+    <html><head>
+      <style>
+        @page { size:80mm auto; margin:0; }
+        body { margin:0; font-family:monospace; }
+        .receipt { width:72mm; padding:3mm; font-size:10px; }
+        .center { text-align:center; }
+        .bold { font-weight:bold; }
+        .small { font-size:8px; }
+        .item { display:flex; justify-content:space-between; }
+        .line { border-top:1px dashed black; margin:3px 0; }
+        @media print { @page { margin:0; } }
+      </style>
+    </head><body>${content}</body></html>
   `)
-
   win.document.close()
   safePrint(win, 600)
 }
 
 // ── MAIN EXPORT ───────────────────────────────────────────────────────────
 export async function printSerialThermal(rows: any[]): Promise<void> {
-  const apiBase = (import.meta.env.VITE_API_BASE as string) || '/api'
-  const bytes   = buildSerialEscPos(rows)
-  const ok      = await sendToWifi(bytes, apiBase)
-
-  if (!ok) {
-    console.info('[print] ESC/POS unavailable — using window.print() fallback')
-    printSerialViaPopup(rows)
+  if (isWebUsbSupported()) {
+    const bytes  = buildEscPos(rows)
+    const result = await sendToUsb(bytes)
+    if (result.ok) return
+    console.warn('[print] USB:', result.message, '— using window.print()')
   }
+  printSerialViaPopup(rows)
 }
