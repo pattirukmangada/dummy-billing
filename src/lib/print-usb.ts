@@ -104,8 +104,7 @@ export async function sendToUsb(bytes: Uint8Array): Promise<UsbResult> {
     }
 
     // ── 5. Send bytes ────────────────────────────────────────────────────
-    await device.transferOut(outEndpoint.endpointNumber, bytes)
-
+await device.transferOut(outEndpoint.endpointNumber, bytes.buffer as ArrayBuffer)
     // Release (but keep open for subsequent prints in the same session)
     await device.releaseInterface(interfaceNumber)
 
